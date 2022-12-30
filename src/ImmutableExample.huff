@@ -1,0 +1,60 @@
+////////////////////// CHANGE YOUR IMMUTABLE HERE: //////////////////////
+
+#define macro PREPARE_IMMUTABLE() = takes(0) returns(1) {
+  timestamp            // [0x00...timestamp]
+  [SHIFT_SIZE] shl     // [0xtimestamp...00]
+}
+
+#define constant IMMUTABLE_SIZE = 0x04 // 4 bytes (uint32)
+#define constant SHIFT_SIZE = 0xE0     // 256bits - 4 bytes (32 bits) = 224bits shift to the left = 0xE0
+
+//////////////////////////////// GETTER /////////////////////////////////
+
+// Use this getter in your contract when you want to access your immutable and put it to the stack
+#define macro GET_IMMUTABLE() = takes(0) returns(1) {
+  GET_FREE_MEMPTR()    // [memptr]
+  [IMMUTABLE_SIZE]     // [immutable_size, memptr]
+  dup1 codesize sub    // [codesize-immutable_size, immutable_size, memptr] Offset of immutable data in bytecode (last N bytes)
+  dup3                 // [memptr, codesize-immutable_size, immutable_size, memptr] Offset in memory where to copy the data (replace with memptr if needed)
+  codecopy             // [memptr] Copy the data into 0x00 memory
+  mload                // [0xtimestamp...00] Load the immutable data from memory (shifted all the way to the left)
+  [SHIFT_SIZE] shr     // [0x00...timestamp] Shift the data to the right
+}
+
+// Replace this with your free memory pointer function
+#define macro GET_FREE_MEMPTR() = takes(0) returns(1) {
+  0x00                 // [free memory ptr]
+}
+
+///////////////////////////// CONSTRUCTOR ///////////////////////////////
+
+#define macro CONSTRUCTOR() = takes (0) returns (0) {
+  codesize             // [codesize]
+  dup1                 // [codesize, codesize]
+  0x00 0x00 codecopy   // [codesize] Copy all code to memory
+  [IMMUTABLE_SIZE] add // [codesize+immutable_size] Get codesize + immutable
+
+  PREPARE_IMMUTABLE()  // [0xtimestamp...00, codesize+immutable_size]
+ 
+  codesize mstore      // [codesize+immutable_size] store immutable bytes at the end of memory (right after the original code)
+  pc 0x0b add          // [PC+11, codesize+immutable_size] what to substract from total codesize (current pointer + 11 instructions below)
+  swap1                // [codesize+immutable_size, PC+11] (Where PC is the amount of constructor at the first PC call and 11 is amount of instructions after)
+  sub                  // [codesize + immutable_size - PC - 11] Size of only the deployed contract bytecode + immutable_size
+  pc 0x05 add return   // [PC+5, codesize + immutable_size - PC - 11] Position of the deployed contract bytecode. Returns the code.
+}
+
+///////////////////////////// EXAMPLE USAGE /////////////////////////////
+
+#define macro MAIN() = {
+  GET_FREE_MEMPTR()    // [memptr] Get free memory pointer
+  GET_IMMUTABLE()      // [timestamp, memptr] Gets the immutable and puts it in the stack
+  
+  // Some memory manipulations to return the value as a function return
+  dup2                 // [memptr, timestamp, memptr] Dup free memory pointer
+  mstore               // [memptr] Save timestamp to memory
+  [IMMUTABLE_SIZE]     // [immutable_size, memptr]
+  dup1 0x20 sub        // [32-immutable_size, immutable_size, memptr]
+  swap1 swap2          // [memptr, 32-immutable_size, immutable_size]
+  add                  // [memptr + (32-immutable_size), immutable_size] (offset, size)
+  return               // Returns N bytes from memory
+}
