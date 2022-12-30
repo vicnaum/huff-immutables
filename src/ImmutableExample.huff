@@ -29,14 +29,21 @@
 ///////////////////////////// CONSTRUCTOR ///////////////////////////////
 
 #define macro CONSTRUCTOR() = takes (0) returns (0) {
+  // Usual code copy to memory routine:
   codesize             // [codesize]
   dup1                 // [codesize, codesize]
   0x00 0x00 codecopy   // [codesize] Copy all code to memory
-  [IMMUTABLE_SIZE] add // [codesize+immutable_size] Get codesize + immutable
 
+  // Get the size of code + immutable
+  [IMMUTABLE_SIZE] add // [codesize+immutable_size]
+
+  // Initialize and load the immutable to stack
   PREPARE_IMMUTABLE()  // [0xtimestamp...00, codesize+immutable_size]
  
-  codesize mstore      // [codesize+immutable_size] store immutable bytes at the end of memory (right after the original code)
+  // Store the immutable in memory at the end of the bytecode (right after the original code)
+  codesize mstore      // [codesize+immutable_size]
+
+  // Finish creation by some calculations and returning the code + appended immutables
   pc 0x0b add          // [PC+11, codesize+immutable_size] what to substract from total codesize (current pointer + 11 instructions below)
   swap1                // [codesize+immutable_size, PC+11] (Where PC is the amount of constructor at the first PC call and 11 is amount of instructions after)
   sub                  // [codesize + immutable_size - PC - 11] Size of only the deployed contract bytecode + immutable_size
